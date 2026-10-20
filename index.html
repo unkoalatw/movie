@@ -1,0 +1,1487 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0d0d0f">
+    <title>專業數位場記板 Pro Slate</title>
+    <!-- iOS PWA 支援 -->
+    <meta name="apple-mobile-web-app-title" content="ProSlate">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="ProSlate">
+    <!-- 動態 Manifest 占位連結 -->
+    <link rel="manifest" id="pwa-manifest-link">
+    <link rel="apple-touch-icon" id="apple-touch-icon-link">
+    <link rel="icon" id="favicon-link" type="image/svg+xml">
+    <style>
+        :root {
+            --bg-dark: #0a0a0c;
+            --board-bg: #141416;
+            --border-color: #27272a;
+            --cell-border: #3f3f46;
+            --text-main: #f4f4f5;
+            --text-muted: #a1a1aa;
+            --accent: #f59e0b;
+            --danger: #ef4444;
+            --success: #10b981;
+            --good-take: #eab308;
+            --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Monaco, Courier, monospace;
+            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body.theme-white {
+            --bg-dark: #d4d4d8;
+            --board-bg: #fafafa;
+            --border-color: #27272a;
+            --cell-border: #71717a;
+            --text-main: #09090b;
+            --text-muted: #52525b;
+            --accent: #2563eb;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            touch-action: manipulation;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            height: -webkit-fill-available;
+            height: 100dvh;
+            overflow: hidden;
+            position: fixed;
+            inset: 0;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: var(--font-sans);
+            display: flex;
+            flex-direction: column;
+            transition: background-color 0.2s, color 0.2s;
+        }
+
+        /* 尾板模式：整體上下顛倒 */
+        body.mode-tail .slate-body {
+            transform: rotate(180deg);
+        }
+
+        #sync-flash {
+            position: fixed;
+            inset: 0;
+            background: #ffffff;
+            z-index: 99999;
+            opacity: 0;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-family: var(--font-mono);
+            font-weight: 900;
+            font-size: min(10vw, 8dvh);
+            line-height: 1.2;
+            transition: opacity 0.02s linear;
+        }
+
+        #sync-flash.active {
+            opacity: 1;
+        }
+
+        .slate-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            padding: max(env(safe-area-inset-top), 4px) max(env(safe-area-inset-right), 6px) max(env(safe-area-inset-bottom), 4px) max(env(safe-area-inset-left), 6px);
+            max-width: 1280px;
+            margin: 0 auto;
+            min-height: 0;
+        }
+
+        .sticks-zone {
+            position: relative;
+            width: 100%;
+            cursor: pointer;
+            padding-top: clamp(10px, 2dvh, 20px);
+            flex-shrink: 0;
+            z-index: 30;
+        }
+
+        .stick {
+            width: 100%;
+            height: clamp(26px, 4.8dvh, 42px);
+            background: repeating-linear-gradient(
+                135deg,
+                #18181b 0px,
+                #18181b 26px,
+                #fafafa 26px,
+                #fafafa 52px
+            );
+            border: 2px solid #000;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+            position: relative;
+        }
+
+        .stick.color-bars {
+            background: repeating-linear-gradient(
+                135deg,
+                #18181b 0px, #18181b 22px,
+                #ef4444 22px, #ef4444 44px,
+                #f59e0b 44px, #f59e0b 66px,
+                #10b981 66px, #10b981 88px,
+                #3b82f6 88px, #3b82f6 110px,
+                #fafafa 110px, #fafafa 132px
+            );
+        }
+
+        #top-stick {
+            transform-origin: 18px 100%;
+            transform: rotate(-14deg);
+            transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+            border-radius: 6px 6px 2px 2px;
+            margin-bottom: -2px;
+            z-index: 2;
+        }
+
+        #top-stick.clapped {
+            transform: rotate(0deg);
+            transition: transform 0.035s cubic-bezier(0.4, 0, 1, 1);
+        }
+
+        #bottom-stick {
+            border-radius: 2px 2px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 10px;
+        }
+
+        .hinge {
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: clamp(52px, 13vw, 75px);
+            height: calc(100% - 18px);
+            background: #27272a;
+            border: 2px solid #52525b;
+            border-radius: 6px;
+            z-index: 5;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            padding: 4px 8px;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.6);
+            pointer-events: none;
+        }
+
+        .bolt {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #cbd5e1;
+            border: 1px solid #1e293b;
+        }
+
+        .stick-badge {
+            background: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            font-size: clamp(9px, 1.8vw, 12px);
+            font-weight: 800;
+            padding: 2px 8px;
+            border-radius: 99px;
+            letter-spacing: 0.5px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(4px);
+        }
+
+        .slate-body {
+            flex: 1;
+            min-height: 0;
+            background-color: var(--board-bg);
+            border: 2px solid var(--border-color);
+            border-top: none;
+            border-radius: 0 0 10px 10px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            transition: transform 0.25s ease;
+        }
+
+        .row-header {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            border-bottom: 2px solid var(--border-color);
+            background: rgba(0, 0, 0, 0.08);
+            flex-shrink: 0;
+        }
+
+        .row-main {
+            flex: 1;
+            min-height: 0;
+            display: grid;
+            grid-template-columns: 1.15fr 1.15fr 1fr;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .row-timecode {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr;
+            border-bottom: 2px solid var(--border-color);
+            background: rgba(0,0,0,0.15);
+            flex-shrink: 0;
+        }
+
+        .row-footer {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            flex-shrink: 0;
+        }
+
+        .cell {
+            padding: clamp(2px, 0.8dvh, 6px) clamp(5px, 1.4vw, 12px);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            border-right: 2px solid var(--border-color);
+            position: relative;
+            min-width: 0;
+            min-height: 0;
+        }
+
+        .cell:last-child {
+            border-right: none;
+        }
+
+        .label {
+            font-size: clamp(8px, 1.3dvh, 11px);
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            white-space: nowrap;
+            line-height: 1.2;
+            gap: 4px;
+        }
+
+        .slate-input {
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            font-family: var(--font-sans);
+            font-weight: 800;
+            outline: none;
+            padding: 1px 0;
+            text-overflow: ellipsis;
+            user-select: text;
+        }
+
+        .slate-input:focus {
+            background: rgba(245, 158, 11, 0.15);
+            border-radius: 4px;
+        }
+
+        .input-prod {
+            font-size: clamp(12px, 2.3dvh, 20px);
+        }
+
+        .input-meta {
+            font-size: clamp(10px, 1.8dvh, 15px);
+        }
+
+        .main-number-wrap {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .input-giant {
+            font-family: var(--font-mono);
+            font-size: min(15vw, 10dvh);
+            font-weight: 900;
+            text-align: center;
+            width: 100%;
+            line-height: 1;
+            letter-spacing: -0.04em;
+            padding: 0;
+        }
+
+        /* 步進微調鈕支援長按動畫 */
+        .stepper-bar {
+            display: flex;
+            justify-content: center;
+            gap: 3px;
+        }
+
+        .step-btn {
+            background: rgba(128, 128, 128, 0.2);
+            border: 1px solid rgba(128, 128, 128, 0.35);
+            color: var(--text-main);
+            border-radius: 4px;
+            font-size: clamp(9px, 1.5dvh, 13px);
+            font-weight: 800;
+            padding: 1px 7px;
+            cursor: pointer;
+            line-height: 1.2;
+            transition: transform 0.08s, background 0.12s;
+        }
+
+        .step-btn:active {
+            transform: scale(0.9);
+            background: var(--accent);
+            color: #000;
+        }
+
+        .tc-box {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+        }
+
+        .tc-digits {
+            font-family: var(--font-mono);
+            font-size: clamp(16px, 3.6dvh, 32px);
+            font-weight: 900;
+            color: var(--danger);
+            letter-spacing: 0.02em;
+            text-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+            font-variant-numeric: tabular-nums;
+        }
+
+        body.theme-white .tc-digits {
+            color: #dc2626;
+            text-shadow: none;
+        }
+
+        .pill-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        .pill {
+            font-size: clamp(8px, 1.2dvh, 11px);
+            font-weight: 800;
+            padding: 2px 5px;
+            border-radius: 4px;
+            border: 1px solid var(--text-muted);
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.12s;
+        }
+
+        .pill.active {
+            background: var(--text-main);
+            color: var(--board-bg);
+            border-color: var(--text-main);
+        }
+
+        .pill.active-warn {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+        }
+
+        /* 工具列 */
+        .toolbar {
+            display: grid;
+            grid-template-columns: 1.5fr repeat(5, 1fr) 0.6fr;
+            gap: 4px;
+            padding-top: clamp(4px, 0.9dvh, 8px);
+            flex-shrink: 0;
+        }
+
+        .tool-btn {
+            background: #202024;
+            color: #f4f4f5;
+            border: 1px solid #3f3f46;
+            border-radius: 6px;
+            padding: clamp(5px, 1.2dvh, 9px) 2px;
+            font-size: clamp(9px, 1.5dvh, 12px);
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.15s, transform 0.08s;
+        }
+
+        .tool-btn.install-btn {
+            background: #1e3a8a;
+            color: #93c5fd;
+            border-color: #3b82f6;
+            display: none;
+        }
+
+        .tool-btn:active {
+            transform: scale(0.95);
+        }
+
+        .tool-btn.primary {
+            background: var(--accent);
+            color: #09090b;
+            border-color: var(--accent);
+            font-weight: 900;
+        }
+
+        .tool-btn.active-toggle {
+            border-color: var(--success);
+            color: var(--success);
+        }
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+        }
+
+        .modal-backdrop.open {
+            display: flex;
+        }
+
+        .modal-card {
+            background: #18181b;
+            color: #fff;
+            border: 1px solid #3f3f46;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 600px;
+            max-height: 85dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.8);
+        }
+
+        .modal-header {
+            padding: 10px 14px;
+            border-bottom: 1px solid #27272a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 800;
+            font-size: 14px;
+        }
+
+        .modal-body {
+            padding: 8px 12px;
+            overflow-y: auto;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            flex: 1;
+        }
+
+        .log-item {
+            padding: 8px 4px;
+            border-bottom: 1px solid #27272a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .circle-take-btn {
+            background: transparent;
+            border: 1px solid #52525b;
+            color: #71717a;
+            padding: 3px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .circle-take-btn.active {
+            color: #eab308;
+            border-color: #eab308;
+            font-weight: bold;
+        }
+
+        @media (orientation: portrait) and (max-width: 640px) {
+            .row-main {
+                grid-template-columns: 1fr 1fr;
+                grid-template-rows: 1fr 1fr;
+            }
+            .cell-take {
+                grid-column: span 2;
+                border-top: 2px solid var(--border-color);
+                border-right: none;
+            }
+            .input-giant {
+                font-size: min(15vw, 7.5dvh);
+            }
+            .row-timecode {
+                grid-template-columns: 1fr;
+            }
+            .row-timecode .cell:first-child {
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
+            }
+            .row-footer {
+                grid-template-columns: 1fr 1fr;
+            }
+            .cell-badges {
+                grid-column: span 2;
+                border-top: 1px solid var(--border-color);
+                border-right: none;
+            }
+            .pill-group {
+                justify-content: space-between;
+                width: 100%;
+            }
+            .pill {
+                flex: 1;
+                text-align: center;
+            }
+            .toolbar {
+                grid-template-columns: 1.4fr repeat(3, 1fr);
+                grid-template-rows: auto auto;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 全螢幕閃光同步格 (可精確顯示當前鏡次與時間碼) -->
+    <div id="sync-flash">
+        <div id="flash-info" style="font-size: 0.5em; opacity: 0.85;"></div>
+        <div id="flash-tc">00:00:00:00</div>
+    </div>
+
+    <div class="slate-wrapper">
+        <!-- 打板木條區 (支援點擊與向下手勢滑動) -->
+        <div class="sticks-zone" id="sticks-trigger" title="點擊或向下滑動打板">
+            <div class="hinge">
+                <div class="bolt"></div>
+                <div class="bolt"></div>
+            </div>
+            <div class="stick" id="top-stick"></div>
+            <div class="stick" id="bottom-stick">
+                <span class="stick-badge" id="tail-slate-indicator" style="display:none; color:#ef4444; border-color:#ef4444;">⚠ 尾板 TAIL SLATE</span>
+                <span class="stick-badge" id="clap-status-hint">🎬 點擊打板 CLAP</span>
+                <span class="stick-badge" id="clap-gesture-hint">↓ 滑動打板</span>
+            </div>
+        </div>
+
+        <div class="slate-body" id="slate-body-el">
+            <!-- 第 1 列：專案片名、日期與卷號/卡號 -->
+            <div class="row-header">
+                <div class="cell">
+                    <div class="label">
+                        <span>PROD. 劇組/片名</span>
+                        <span id="date-display" style="font-family: var(--font-mono); color: var(--text-muted);">2026-10-20</span>
+                    </div>
+                    <input type="text" id="inp-prod" class="slate-input input-prod" value="MY PRODUCTION" placeholder="輸入專案名稱...">
+                </div>
+                <div class="cell" style="min-width: 90px; max-width: 155px;">
+                    <div class="label">
+                        <span>ROLL 卷/卡</span>
+                        <span id="fps-badge" style="cursor:pointer; color:var(--accent); font-weight:800;" title="點擊切換幀率">24 FPS</span>
+                    </div>
+                    <input type="text" id="inp-roll" class="slate-input input-prod" value="A01" style="font-family: var(--font-mono); text-align: center;">
+                </div>
+            </div>
+
+            <!-- 第 2 列：場、鏡、次 (核心視覺區域) -->
+            <div class="row-main">
+                <!-- SCENE 場次 -->
+                <div class="cell">
+                    <div class="label">
+                        <span>SCENE 場</span>
+                        <div class="stepper-bar">
+                            <button class="step-btn" data-step-id="inp-scene" data-delta="-1">−</button>
+                            <button class="step-btn" data-step-id="inp-scene" data-delta="1">＋</button>
+                        </div>
+                    </div>
+                    <div class="main-number-wrap">
+                        <input type="text" id="inp-scene" class="slate-input input-giant" value="1">
+                    </div>
+                </div>
+
+                <!-- SHOT 鏡號 (支援數字+字母自動進位，如 1A -> 1B) -->
+                <div class="cell">
+                    <div class="label">
+                        <span>SHOT 鏡</span>
+                        <div class="stepper-bar">
+                            <button class="step-btn" id="btn-shot-dec">−</button>
+                            <button class="step-btn" id="btn-shot-inc">＋</button>
+                        </div>
+                    </div>
+                    <div class="main-number-wrap">
+                        <input type="text" id="inp-shot" class="slate-input input-giant" value="1A">
+                    </div>
+                </div>
+
+                <!-- TAKE 次數 -->
+                <div class="cell cell-take">
+                    <div class="label">
+                        <span>TAKE 次</span>
+                        <div class="stepper-bar">
+                            <button class="step-btn" data-step-id="inp-take" data-delta="-1">−</button>
+                            <button class="step-btn" data-step-id="inp-take" data-delta="1">＋</button>
+                            <button class="step-btn" onclick="resetTake()" title="重設為 1">1</button>
+                        </div>
+                    </div>
+                    <div class="main-number-wrap">
+                        <input type="text" id="inp-take" class="slate-input input-giant" value="1" style="color: var(--accent);">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 第 3 列：高精準度 SMPTE 時間碼與鏡頭/濾鏡 -->
+            <div class="row-timecode">
+                <div class="cell">
+                    <div class="label">
+                        <span>TIMECODE 時間碼</span>
+                        <span id="tc-mode-label" style="color: var(--accent); cursor: pointer;" onclick="toggleTimecodeMode()">REAL TIME 系統時鐘</span>
+                    </div>
+                    <div class="tc-box" onclick="toggleTimecodeMode()" style="cursor: pointer;" title="點擊切換 系統時鐘 / 計時碼錶">
+                        <div class="tc-digits" id="tc-display">00:00:00:00</div>
+                    </div>
+                </div>
+                <div class="cell">
+                    <div class="label">
+                        <span>LENS / FILTER 焦段 / 濾鏡</span>
+                    </div>
+                    <input type="text" id="inp-lens" class="slate-input input-meta" value="35mm T1.5 / ND0.9" placeholder="例如 50mm ND0.6">
+                </div>
+            </div>
+
+            <!-- 第 4 列：導演、攝影與環境標籤 -->
+            <div class="row-footer">
+                <div class="cell">
+                    <div class="label">DIR. 導演</div>
+                    <input type="text" id="inp-dir" class="slate-input input-meta" value="DIRECTOR" placeholder="導演名稱">
+                </div>
+                <div class="cell">
+                    <div class="label">CAM. 攝影</div>
+                    <input type="text" id="inp-cam" class="slate-input input-meta" value="CINEMATOGRAPHER" placeholder="攝影師名稱">
+                </div>
+                <div class="cell cell-badges" style="justify-content: center;">
+                    <div class="pill-group">
+                        <span class="pill active" onclick="togglePill(this, 'loc')">INT 內</span>
+                        <span class="pill" onclick="togglePill(this, 'loc')">EXT 外</span>
+                        <span class="pill active" onclick="togglePill(this, 'time')">DAY 日</span>
+                        <span class="pill" onclick="togglePill(this, 'time')">NGT 夜</span>
+                        <span class="pill" id="pill-mos" onclick="toggleMos(this)">MOS 靜音</span>
+                        <span class="pill" id="pill-tail" onclick="toggleTailSlate(this)">TAIL 尾板</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="toolbar">
+            <button class="tool-btn primary" onclick="triggerClap()">
+                <span>🎬 打板</span>
+            </button>
+            <button class="tool-btn active-toggle" id="btn-auto-inc" onclick="toggleAutoInc()">
+                <span>自動+Take</span>
+            </button>
+            <button class="tool-btn" id="btn-stripes" onclick="toggleStripes()">
+                <span>🌈 彩條</span>
+            </button>
+            <button class="tool-btn" onclick="toggleTheme()">
+                <span>🌓 黑/白</span>
+            </button>
+            <button class="tool-btn" onclick="openLogModal()">
+                <span>📋 場記 (<span id="log-count">0</span>)</span>
+            </button>
+            <button class="tool-btn" onclick="markCircleTakeQuick()" title="將最近一鏡標為優質鏡 (Circle Take)">
+                <span>★ 精選</span>
+            </button>
+            <button class="tool-btn install-btn" id="btn-pwa-install" onclick="triggerPWAInstall()" title="安裝為本機應用程式">
+                <span>📲 安裝</span>
+            </button>
+            <button class="tool-btn" id="btn-fullscreen-toggle" onclick="toggleFullScreen()" title="全螢幕切換">
+                <span id="fs-icon">⛶</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="log-modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <span>📋 打板紀錄單 (離線暫存)</span>
+                <button class="step-btn" onclick="closeLogModal()">✕ 關閉</button>
+            </div>
+            <div class="modal-body" id="log-list">
+                <!-- 動態注入紀錄 -->
+            </div>
+            <div class="modal-header" style="border-top: 1px solid #27272a; border-bottom: none; gap: 8px;">
+                <button class="tool-btn" onclick="clearLogs()" style="background:#7f1d1d; border-color:#991b1b; flex:1;">清空</button>
+                <button class="tool-btn primary" onclick="copyLogsToClipboard()" style="flex:2;">複製 CSV 報告</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* =========================================================
+         * 零外部依賴 內嵌動態 PWA 註冊與離線 Service Worker
+         * ========================================================= */
+        let deferredInstallPrompt = null;
+
+        function initPWA() {
+            // 1. 生成打板圖標 SVG Data URL
+            const iconSvg = `
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+                    <rect width="512" height="512" rx="100" fill="#0d0d0f"/>
+                    <!-- 打板木條 -->
+                    <g transform="translate(40, 70)">
+                        <rect x="0" y="0" width="432" height="90" rx="12" fill="#18181b" stroke="#3f3f46" stroke-width="6"/>
+                        <path d="M 50 0 L 10 90 M 130 0 L 90 90 M 210 0 L 170 90 M 290 0 L 250 90 M 370 0 L 330 90" stroke="#fafafa" stroke-width="28" stroke-linecap="round"/>
+                    </g>
+                    <!-- 板身 -->
+                    <rect x="40" y="175" width="432" height="260" rx="16" fill="#141416" stroke="#27272a" stroke-width="6"/>
+                    <text x="256" y="270" font-family="system-ui, sans-serif" font-weight="900" font-size="64" fill="#f59e0b" text-anchor="middle">PRO SLATE</text>
+                    <text x="256" y="360" font-family="monospace" font-weight="900" font-size="44" fill="#ef4444" text-anchor="middle">00:00:00:00</text>
+                </svg>
+            `.trim();
+            const iconUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(iconSvg);
+
+            const favEl = document.getElementById('favicon-link');
+            if (favEl) favEl.href = iconUrl;
+            const appleIconEl = document.getElementById('apple-touch-icon-link');
+            if (appleIconEl) appleIconEl.href = iconUrl;
+
+            // 2. 動態生成 Web App Manifest 並注入
+            const manifest = {
+                name: "專業數位場記板 Pro Slate",
+                short_name: "ProSlate",
+                description: "超輕量相容手機尺寸的極簡數位場記板",
+                start_url: window.location.href,
+                scope: "./",
+                display: "standalone",
+                background_color: "#0a0a0c",
+                theme_color: "#0d0d0f",
+                orientation: "any",
+                icons: [
+                    {
+                        src: iconUrl,
+                        sizes: "512x512",
+                        type: "image/svg+xml",
+                        purpose: "any maskable"
+                    }
+                ]
+            };
+
+            const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+            const manifestUrl = URL.createObjectURL(manifestBlob);
+            const manifestLink = document.getElementById('pwa-manifest-link');
+            if (manifestLink) manifestLink.href = manifestUrl;
+
+            // 3. 註冊內嵌 Service Worker 實現秒開與完全離線快取
+            if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+                const swCode = `
+                    const CACHE_NAME = 'pro-slate-v3';
+                    self.addEventListener('install', (e) => {
+                        self.skipWaiting();
+                    });
+                    self.addEventListener('activate', (e) => {
+                        e.waitUntil(
+                            caches.keys().then(keys => Promise.all(
+                                keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+                            )).then(() => clients.claim())
+                        );
+                    });
+                    self.addEventListener('fetch', (e) => {
+                        e.respondWith(
+                            caches.match(e.request).then(res => {
+                                return res || fetch(e.request).then(response => {
+                                    if (e.request.method === 'GET') {
+                                        const cloned = response.clone();
+                                        caches.open(CACHE_NAME).then(cache => cache.put(e.request, cloned));
+                                    }
+                                    return response;
+                                }).catch(() => caches.match('./') || caches.match(e.request));
+                            })
+                        );
+                    });
+                `;
+
+                try {
+                    const swBlob = new Blob([swCode], { type: 'application/javascript' });
+                    const swUrl = URL.createObjectURL(swBlob);
+                    navigator.serviceWorker.register(swUrl, { scope: './' }).catch(() => {});
+                } catch (e) {}
+            }
+
+            // 4. 監聽 PWA 安裝事件提示 (Android / Chrome 等)
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                deferredInstallPrompt = e;
+                const installBtn = document.getElementById('btn-pwa-install');
+                if (installBtn) {
+                    installBtn.style.display = 'flex';
+                }
+            });
+
+            window.addEventListener('appinstalled', () => {
+                const installBtn = document.getElementById('btn-pwa-install');
+                if (installBtn) installBtn.style.display = 'none';
+                deferredInstallPrompt = null;
+            });
+        }
+
+        function triggerPWAInstall() {
+            if (deferredInstallPrompt) {
+                deferredInstallPrompt.prompt();
+                deferredInstallPrompt.userChoice.then(() => {
+                    deferredInstallPrompt = null;
+                    const installBtn = document.getElementById('btn-pwa-install');
+                    if (installBtn) installBtn.style.display = 'none';
+                });
+            } else {
+                // 若為 iOS 或未觸發提示，顯示引導
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+                if (isIOS) {
+                    const hint = document.getElementById('clap-status-hint');
+                    hint.textContent = '💡 點擊 Safari 底部分享鍵，選「加入主畫面」';
+                    setTimeout(() => { hint.textContent = '🎬 點擊打板 CLAP'; }, 3000);
+                }
+            }
+        }
+
+        /* =========================================================
+         * 零外部依賴 物理打板聲與廣播級 1000Hz 同步嗶聲合成器
+         * ========================================================= */
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (AudioContextClass) {
+                    audioCtx = new AudioContextClass();
+                }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        // isTail: 尾板時會連續發出兩聲短嗶聲與雙擊擊木聲，提示剪輯師為 Tail Slate
+        function playClapSound(isMos, isTail) {
+            if (isMos) return;
+            initAudio();
+            if (!audioCtx) return;
+
+            const executeSound = (delay = 0) => {
+                const now = audioCtx.currentTime + delay;
+
+                // 1. 木質撞擊高頻雜訊
+                const bufferSize = Math.floor(audioCtx.sampleRate * 0.08);
+                const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 3);
+                }
+
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = noiseBuffer;
+                const bandpass = audioCtx.createBiquadFilter();
+                bandpass.type = 'bandpass';
+                bandpass.frequency.setValueAtTime(1550, now);
+                bandpass.Q.setValueAtTime(1.1, now);
+
+                const noiseGain = audioCtx.createGain();
+                noiseGain.gain.setValueAtTime(1.3, now);
+                noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.075);
+
+                noise.connect(bandpass);
+                bandpass.connect(noiseGain);
+                noiseGain.connect(audioCtx.destination);
+                noise.start(now);
+
+                // 2. 木盒低頻共鳴敲擊
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(360, now);
+                osc.frequency.exponentialRampToValueAtTime(65, now + 0.06);
+
+                gain.gain.setValueAtTime(1.0, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.07);
+
+                // 3. 廣播級 1000Hz 精確同步音 (長度約 40ms = 1 格)
+                const beepOsc = audioCtx.createOscillator();
+                const beepGain = audioCtx.createGain();
+                beepOsc.type = 'sine';
+                beepOsc.frequency.setValueAtTime(1000, now);
+
+                beepGain.gain.setValueAtTime(0.3, now);
+                beepGain.gain.setValueAtTime(0.001, now + 0.04);
+
+                beepOsc.connect(beepGain);
+                beepGain.connect(audioCtx.destination);
+                beepOsc.start(now);
+                beepOsc.stop(now + 0.042);
+            };
+
+            executeSound(0);
+            if (isTail) {
+                // 尾板第二聲提示音
+                executeSound(0.12);
+            }
+        }
+
+        const state = {
+            fpsList: [
+                { label: '24 FPS', fps: 24 },
+                { label: '23.98 FPS', fps: 23.976 },
+                { label: '25 FPS (PAL)', fps: 25 },
+                { label: '29.97 FPS', fps: 29.97 },
+                { label: '30 FPS', fps: 30 },
+                { label: '50 FPS', fps: 50 },
+                { label: '60 FPS', fps: 60 }
+            ],
+            fpsIndex: 0,
+            tcMode: 'realtime', // 'realtime' or 'elapsed'
+            elapsedStart: Date.now(),
+            autoIncrementTake: true,
+            pendingIncrement: false,
+            isMos: false,
+            isTail: false,
+            colorStripes: false,
+            whiteTheme: false,
+            logs: []
+        };
+
+        const inputIds = ['inp-prod', 'inp-roll', 'inp-scene', 'inp-shot', 'inp-take', 'inp-lens', 'inp-dir', 'inp-cam'];
+
+        function loadSavedState() {
+            try {
+                const saved = localStorage.getItem('pro_slate_v2');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    inputIds.forEach(id => {
+                        if (parsed[id] !== undefined) {
+                            document.getElementById(id).value = parsed[id];
+                        }
+                    });
+                    if (Array.isArray(parsed.logs)) state.logs = parsed.logs;
+                    if (typeof parsed.fpsIndex === 'number' && parsed.fpsIndex < state.fpsList.length) {
+                        state.fpsIndex = parsed.fpsIndex;
+                    }
+                    if (typeof parsed.autoIncrementTake === 'boolean') state.autoIncrementTake = parsed.autoIncrementTake;
+                    if (typeof parsed.colorStripes === 'boolean') state.colorStripes = parsed.colorStripes;
+                    if (typeof parsed.whiteTheme === 'boolean') state.whiteTheme = parsed.whiteTheme;
+                }
+            } catch (e) {}
+            applyUIFromState();
+        }
+
+        function saveState() {
+            try {
+                const payload = {
+                    logs: state.logs,
+                    fpsIndex: state.fpsIndex,
+                    autoIncrementTake: state.autoIncrementTake,
+                    colorStripes: state.colorStripes,
+                    whiteTheme: state.whiteTheme
+                };
+                inputIds.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) payload[id] = el.value;
+                });
+                localStorage.setItem('pro_slate_v2', JSON.stringify(payload));
+            } catch (e) {}
+        }
+
+        function applyUIFromState() {
+            const currentFps = state.fpsList[state.fpsIndex];
+            document.getElementById('fps-badge').textContent = currentFps.label;
+
+            const autoBtn = document.getElementById('btn-auto-inc');
+            autoBtn.classList.toggle('active-toggle', state.autoIncrementTake);
+            autoBtn.innerHTML = state.autoIncrementTake ? '<span>自動+Take: 開</span>' : '<span>自動+Take: 關</span>';
+
+            document.getElementById('top-stick').classList.toggle('color-bars', state.colorStripes);
+            document.getElementById('bottom-stick').classList.toggle('color-bars', state.colorStripes);
+            document.body.classList.toggle('theme-white', state.whiteTheme);
+            document.getElementById('log-count').textContent = state.logs.length;
+
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            document.getElementById('date-display').textContent = `${yyyy}-${mm}-${dd}`;
+        }
+
+        let clapTimeout = null;
+
+        function triggerClap() {
+            if (state.pendingIncrement && state.autoIncrementTake) {
+                stepValue('inp-take', 1);
+                state.pendingIncrement = false;
+            }
+
+            const topStick = document.getElementById('top-stick');
+            const flashOverlay = document.getElementById('sync-flash');
+            const flashInfo = document.getElementById('flash-info');
+            const flashTc = document.getElementById('flash-tc');
+            const hint = document.getElementById('clap-status-hint');
+            const tcText = document.getElementById('tc-display').textContent;
+
+            const sceneVal = document.getElementById('inp-scene').value;
+            const shotVal = document.getElementById('inp-shot').value;
+            const takeVal = document.getElementById('inp-take').value;
+
+            // 拍木條閉合動畫
+            topStick.classList.add('clapped');
+
+            // 播放合成音效
+            playClapSound(state.isMos, state.isTail);
+
+            // 震動回饋 (Tail 時雙震)
+            if (navigator.vibrate) {
+                if (state.isTail) {
+                    navigator.vibrate([40, 50, 40]);
+                } else {
+                    navigator.vibrate(50);
+                }
+            }
+
+            // 精確全白同步閃光 (閃光維持時間依照當前 FPS 計算約 1 格)
+            const currentFps = state.fpsList[state.fpsIndex].fps;
+            const flashDuration = Math.max(38, Math.min(80, Math.round(1000 / currentFps)));
+
+            flashInfo.textContent = `${state.isTail ? 'TAIL SLATE • ' : ''}SC ${sceneVal} / SH ${shotVal} / TK ${takeVal}`;
+            flashTc.textContent = tcText;
+            flashOverlay.classList.add('active');
+
+            setTimeout(() => {
+                flashOverlay.classList.remove('active');
+            }, flashDuration);
+
+            // 記錄至場記日誌
+            recordShotLog(tcText);
+
+            if (state.autoIncrementTake) {
+                state.pendingIncrement = true;
+                hint.textContent = '✅ 已打板 (下次自動 +1 Take)';
+            } else {
+                hint.textContent = '✅ 已打板 CLAPPED';
+            }
+
+            clearTimeout(clapTimeout);
+            clapTimeout = setTimeout(() => {
+                topStick.classList.remove('clapped');
+                if (state.pendingIncrement && state.autoIncrementTake) {
+                    stepValue('inp-take', 1);
+                    state.pendingIncrement = false;
+                }
+                hint.textContent = '🎬 點擊打板 CLAP';
+            }, 900);
+        }
+
+        function stepValue(inputId, delta) {
+            const el = document.getElementById(inputId);
+            const num = parseInt(el.value, 10);
+            if (!isNaN(num)) {
+                el.value = Math.max(1, num + delta);
+            } else {
+                el.value = 1;
+            }
+            saveState();
+        }
+
+        function stepShot(delta) {
+            const el = document.getElementById('inp-shot');
+            const val = el.value.trim().toUpperCase();
+            const matchAlpha = val.match(/^(\d+)([A-Z])$/);
+            if (matchAlpha) {
+                const baseNum = matchAlpha[1];
+                const charCode = matchAlpha[2].charCodeAt(0) + delta;
+                if (charCode >= 65 && charCode <= 90) {
+                    el.value = baseNum + String.fromCharCode(charCode);
+                } else if (charCode < 65) {
+                    el.value = baseNum;
+                }
+            } else {
+                const num = parseInt(val, 10);
+                if (!isNaN(num)) {
+                    if (delta > 0) {
+                        el.value = num + 'A';
+                    } else {
+                        el.value = Math.max(1, num + delta);
+                    }
+                } else {
+                    el.value = '1A';
+                }
+            }
+            // 換鏡頭自動將次數 (Take) 歸 1
+            resetTake();
+        }
+
+        function resetTake() {
+            document.getElementById('inp-take').value = '1';
+            state.pendingIncrement = false;
+            saveState();
+        }
+
+        function togglePill(el, group) {
+            const parent = el.parentElement;
+            const pills = parent.querySelectorAll('.pill');
+            pills.forEach(p => {
+                if (p.id !== 'pill-mos' && p.id !== 'pill-tail') {
+                    if (group === 'loc' && (p.textContent.includes('INT') || p.textContent.includes('EXT'))) {
+                        p.classList.remove('active');
+                    }
+                    if (group === 'time' && (p.textContent.includes('DAY') || p.textContent.includes('NGT'))) {
+                        p.classList.remove('active');
+                    }
+                }
+            });
+            el.classList.add('active');
+        }
+
+        function toggleMos(el) {
+            state.isMos = !state.isMos;
+            el.classList.toggle('active-warn', state.isMos);
+        }
+
+        function toggleTailSlate(el) {
+            state.isTail = !state.isTail;
+            el.classList.toggle('active-warn', state.isTail);
+            document.body.classList.toggle('mode-tail', state.isTail);
+            document.getElementById('tail-slate-indicator').style.display = state.isTail ? 'inline-block' : 'none';
+        }
+
+        function toggleAutoInc() {
+            state.autoIncrementTake = !state.autoIncrementTake;
+            state.pendingIncrement = false;
+            applyUIFromState();
+            saveState();
+        }
+
+        function toggleStripes() {
+            state.colorStripes = !state.colorStripes;
+            applyUIFromState();
+            saveState();
+        }
+
+        function toggleTheme() {
+            state.whiteTheme = !state.whiteTheme;
+            applyUIFromState();
+            saveState();
+        }
+
+        function toggleTimecodeMode() {
+            if (state.tcMode === 'realtime') {
+                state.tcMode = 'elapsed';
+                state.elapsedStart = Date.now();
+                document.getElementById('tc-mode-label').textContent = 'STOPWATCH 計時碼錶 (點擊重設)';
+            } else {
+                state.tcMode = 'realtime';
+                document.getElementById('tc-mode-label').textContent = 'REAL TIME 系統時鐘';
+            }
+        }
+
+        function updateTimecode() {
+            const currentFps = state.fpsList[state.fpsIndex].fps;
+            const now = new Date();
+            let hh, mm, ss, ff;
+
+            if (state.tcMode === 'realtime') {
+                hh = String(now.getHours()).padStart(2, '0');
+                mm = String(now.getMinutes()).padStart(2, '0');
+                ss = String(now.getSeconds()).padStart(2, '0');
+                const ms = now.getMilliseconds();
+                ff = String(Math.floor((ms / 1000) * currentFps)).padStart(2, '0');
+            } else {
+                const diff = Date.now() - state.elapsedStart;
+                const totalSec = Math.floor(diff / 1000);
+                hh = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+                mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+                ss = String(totalSec % 60).padStart(2, '0');
+                const ms = diff % 1000;
+                ff = String(Math.floor((ms / 1000) * currentFps)).padStart(2, '0');
+            }
+
+            document.getElementById('tc-display').textContent = `${hh}:${mm}:${ss}:${ff}`;
+            requestAnimationFrame(updateTimecode);
+        }
+
+        function recordShotLog(tc) {
+            const entry = {
+                id: Date.now(),
+                time: new Date().toLocaleTimeString('zh-TW', { hour12: false }),
+                tc: tc,
+                prod: document.getElementById('inp-prod').value,
+                roll: document.getElementById('inp-roll').value,
+                scene: document.getElementById('inp-scene').value,
+                shot: document.getElementById('inp-shot').value,
+                take: document.getElementById('inp-take').value,
+                lens: document.getElementById('inp-lens').value,
+                audio: state.isMos ? 'MOS' : 'SYNC',
+                tail: state.isTail ? 'TAIL' : 'HEAD',
+                fps: state.fpsList[state.fpsIndex].label,
+                circle: false // 是否為精選鏡
+            };
+            state.logs.unshift(entry);
+            if (state.logs.length > 250) state.logs.pop();
+            document.getElementById('log-count').textContent = state.logs.length;
+            saveState();
+        }
+
+        function markCircleTakeQuick() {
+            if (state.logs.length > 0) {
+                state.logs[0].circle = !state.logs[0].circle;
+                saveState();
+                const hint = document.getElementById('clap-status-hint');
+                hint.textContent = state.logs[0].circle ? '★ 已標記為精選鏡 (Circle Take)' : '取消精選鏡標記';
+                setTimeout(() => { hint.textContent = '🎬 點擊打板 CLAP'; }, 1200);
+            }
+        }
+
+        function toggleCircleInLog(logId) {
+            const target = state.logs.find(l => l.id === logId);
+            if (target) {
+                target.circle = !target.circle;
+                saveState();
+                renderLogList();
+            }
+        }
+
+        function renderLogList() {
+            const container = document.getElementById('log-list');
+            if (state.logs.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding: 28px; color:#71717a;">尚未有打板紀錄。點擊打板後會自動在此記錄每一鏡的時間碼與參數。</div>';
+                return;
+            }
+            container.innerHTML = state.logs.map((item, idx) => `
+                <div class="log-item">
+                    <div>
+                        <div style="font-weight:800; font-size:13px;">
+                            <span style="color:#f59e0b;">SC ${item.scene}</span> |
+                            <span style="color:#60a5fa;">SH ${item.shot}</span> |
+                            <span style="color:${item.circle ? '#eab308' : '#fff'};">TK ${item.take} ${item.circle ? '★' : ''}</span>
+                            <span style="font-size:10px; color:${item.tail === 'TAIL' ? '#ef4444' : '#a1a1aa'};">[${item.tail}]</span>
+                        </div>
+                        <div style="font-size:10px; color:#a1a1aa;">Roll:${item.roll} • ${item.lens} • ${item.audio} • ${item.fps}</div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <div style="text-align:right;">
+                            <div style="color:#ef4444; font-weight:700;">${item.tc}</div>
+                            <div style="font-size:10px; color:#71717a;">${item.time}</div>
+                        </div>
+                        <button class="circle-take-btn ${item.circle ? 'active' : ''}" onclick="toggleCircleInLog(${item.id})" title="標記為 Circle Take">★</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function openLogModal() {
+            renderLogList();
+            document.getElementById('log-modal').classList.add('open');
+        }
+
+        function closeLogModal() {
+            document.getElementById('log-modal').classList.remove('open');
+        }
+
+        function clearLogs() {
+            state.logs = [];
+            document.getElementById('log-count').textContent = '0';
+            saveState();
+            renderLogList();
+        }
+
+        function copyLogsToClipboard() {
+            const header = 'Roll,Scene,Shot,Take,CircleTake,Timecode,Lens,Audio,Type,FPS,RealTime\n';
+            const rows = state.logs.map(l =>
+                `${l.roll},${l.scene},${l.shot},${l.take},${l.circle ? 'YES' : 'NO'},${l.tc},"${l.lens}",${l.audio},${l.tail},${l.fps},${l.time}`
+            ).join('\n');
+            const csv = header + rows;
+
+            const textarea = document.createElement('textarea');
+            textarea.value = csv;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                const btn = event.currentTarget;
+                const oldText = btn.textContent;
+                btn.textContent = '✅ 已複製 CSV!';
+                setTimeout(() => { btn.textContent = oldText; }, 1500);
+            } catch (e) {}
+            document.body.removeChild(textarea);
+        }
+
+        let wakeLock = null;
+        let autoFullscreenTriggered = false;
+
+        async function requestScreenWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                }
+            } catch (err) {}
+        }
+
+        function enterFullscreenSafe() {
+            const docEl = document.documentElement;
+            const rfs = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
+            if (rfs && !document.fullscreenElement && !document.webkitFullscreenElement) {
+                rfs.call(docEl).catch(() => {});
+            }
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                enterFullscreenSafe();
+            } else {
+                const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+                if (efs) efs.call(document).catch(() => {});
+            }
+        }
+
+        function handleFullscreenChange() {
+            const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            const fsIcon = document.getElementById('fs-icon');
+            if (fsIcon) fsIcon.textContent = isFs ? '✕' : '⛶';
+        }
+
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+        // 長按連續跳號支援 (Long Press Stepper)
+        function setupLongPressStepper(buttonEl, callback) {
+            let pressTimer = null;
+            let stepInterval = null;
+
+            const startPress = (e) => {
+                e.preventDefault();
+                callback();
+                pressTimer = setTimeout(() => {
+                    stepInterval = setInterval(callback, 85);
+                }, 350);
+            };
+
+            const endPress = () => {
+                clearTimeout(pressTimer);
+                clearInterval(stepInterval);
+            };
+
+            buttonEl.addEventListener('mousedown', startPress);
+            buttonEl.addEventListener('mouseup', endPress);
+            buttonEl.addEventListener('mouseleave', endPress);
+            buttonEl.addEventListener('touchstart', startPress, { passive: false });
+            buttonEl.addEventListener('touchend', endPress);
+            buttonEl.addEventListener('touchcancel', endPress);
+        }
+
+        // 打板區向下手勢滑動偵測 (Swipe-down Clap)
+        function setupSwipeClap() {
+            const triggerEl = document.getElementById('sticks-trigger');
+            let startY = 0;
+
+            triggerEl.addEventListener('touchstart', (e) => {
+                if (e.touches.length > 0) {
+                    startY = e.touches[0].clientY;
+                }
+            }, { passive: true });
+
+            triggerEl.addEventListener('touchend', (e) => {
+                if (e.changedTouches.length > 0) {
+                    const diffY = e.changedTouches[0].clientY - startY;
+                    if (diffY > 25) {
+                        triggerClap();
+                    }
+                }
+            }, { passive: true });
+        }
+
+        window.onload = function() {
+            initPWA();
+            loadSavedState();
+            requestAnimationFrame(updateTimecode);
+            setupSwipeClap();
+
+            // 首次觸碰全螢幕與喚醒鎖啟用
+            const handleFirstGesture = () => {
+                initAudio();
+                requestScreenWakeLock();
+                if (!autoFullscreenTriggered) {
+                    autoFullscreenTriggered = true;
+                    enterFullscreenSafe();
+                }
+            };
+            window.addEventListener('touchstart', handleFirstGesture, { passive: true });
+            window.addEventListener('click', handleFirstGesture, { passive: true });
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    requestScreenWakeLock();
+                }
+            });
+
+            // 綁定打板點擊
+            document.getElementById('sticks-trigger').addEventListener('click', (e) => {
+                triggerClap();
+            });
+
+            // 循環切換專業影視幀率
+            document.getElementById('fps-badge').addEventListener('click', () => {
+                state.fpsIndex = (state.fpsIndex + 1) % state.fpsList.length;
+                applyUIFromState();
+                saveState();
+            });
+
+            // 綁定步進按鈕與長按功能
+            document.querySelectorAll('[data-step-id]').forEach(btn => {
+                const targetId = btn.getAttribute('data-step-id');
+                const delta = parseInt(btn.getAttribute('data-delta'), 10);
+                setupLongPressStepper(btn, () => stepValue(targetId, delta));
+            });
+
+            setupLongPressStepper(document.getElementById('btn-shot-dec'), () => stepShot(-1));
+            setupLongPressStepper(document.getElementById('btn-shot-inc'), () => stepShot(1));
+
+            // 輸入變更自動儲存
+            inputIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('input', saveState);
+            });
+
+            // 鍵盤空白鍵快速打板 (支援外接藍牙鍵盤)
+            window.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT') {
+                    e.preventDefault();
+                    triggerClap();
+                }
+            });
+        };
+    </script>
+</body>
+</html>
